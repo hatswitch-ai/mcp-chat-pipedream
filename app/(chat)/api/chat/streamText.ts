@@ -50,7 +50,22 @@ export const streamText = async (
           switch (event.finishReason) {
             case "stop":
             case "content-filter":
+              resolve(false)
+              break
             case "error":
+              // On error, still try to append messages and stop the loop
+              console.log(">> Error occurred, stopping execution")
+              try {
+                if (event.response.messages.length > 0) {
+                  messages = appendResponseMessages({
+                    messages,
+                    responseMessages: event.response.messages,
+                  })
+                }
+                await rest.onFinish?.(event)
+              } catch (e) {
+                console.error("Error in onFinish handler:", e)
+              }
               resolve(false)
               break
             case "length":
@@ -68,7 +83,10 @@ export const streamText = async (
           })
 
           if (!assistantId) {
-            throw new Error("No assistant message found!")
+            console.error("No assistant message found in response messages:", event.response.messages)
+            // Instead of throwing, just stop the loop
+            resolve(false)
+            return
           }
 
           messages = appendResponseMessages({

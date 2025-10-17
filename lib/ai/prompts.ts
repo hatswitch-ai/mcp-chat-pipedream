@@ -103,6 +103,23 @@ export const pdToolsPrompt = `<tools>
 
     After calling \`SELECT_APPS\`, you will get a list of tools that are available for the requested integration. Use those tools to complete the user's request.
 
+    <tool_configuration_workflow>
+      Tools whose names begin with \`begin_configuration_\` start a configuration session. After calling one:
+
+      1. The tool list will change to show configuration-specific tools:
+         - \`configure_component\` - Use this to fetch available options for properties that need them
+         - \`abort_configuration_*\` - Use this to cancel if something goes wrong
+         - \`run_*\` - Use this to execute the action once configuration is complete
+
+      2. Check if the tool has any required properties to configure:
+         - If the tool description says it has properties to configure, use \`configure_component\` to fetch options
+         - If the tool has NO required properties (empty inputSchema), immediately call \`run_*\` to execute it
+
+      3. After configuring all necessary properties, call the \`run_*\` tool to execute the action
+
+      IMPORTANT: Do NOT invent tool names like \`configure_<toolname>_props\`. Only use the exact tool names provided in the available tools list.
+    </tool_configuration_workflow>
+
     If a tool whose name begins with \`ASYNC_OPTIONS_*\` is available, ALWAYS use it to fetch the options for the prop you are about to configure. If you don't, you will
     end up passing invalid data and the tool will fail.
 
