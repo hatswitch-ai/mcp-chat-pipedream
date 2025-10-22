@@ -23,14 +23,14 @@ export const chatModels: Array<ChatModel> = [
     description: "Flagship model for complex tasks",
   },
   {
-    id: "claude-opus-4-0",
-    name: "Claude Opus 4",
-    description: "Highest level of intelligence and capability",
+    id: "claude-haiku-4-5",
+    name: "Claude Haiku 4.5",
+    description: "Fastest model with near-frontier intelligence",
   },
   {
-    id: "claude-sonnet-4-0",
-    name: "Claude Sonnet 4",
-    description: "High intelligence and balanced performance",
+    id: "claude-sonnet-4-5",
+    name: "Claude Sonnet 4.5",
+    description: "Smartest model for complex agents and coding",
   },
   // {
   //   id: 'chat-model-reasoning',
