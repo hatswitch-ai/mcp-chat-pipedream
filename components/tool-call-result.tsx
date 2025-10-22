@@ -217,34 +217,55 @@ export const ToolCallResult = ({
   const [connectedAccount, setConnectedAccount] = useState<Account | null>(null);
   const [isLoadingAccount, setIsLoadingAccount] = useState(false);
 
-  // Create browser client for connect flow only
-  // No projectId needed - that's for server clients
-  // tokenCallback/externalUserId only needed for authenticated API calls like getAccounts
+  // Create browser client following the documentation pattern
   const { id: externalUserId } = session?.user || {};
   if (!externalUserId) return;
-  const pd = createFrontendClient({
+  
+  const client = createFrontendClient({
     externalUserId,
+    tokenCallback: async () => {
+      const res = await fetch("/api/connect-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ external_user_id: externalUserId }),
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch Connect token");
+      const { token } = await res.json();
+      if (!token) throw new Error("Failed to fetch Connect token");
+      return token;
+    },
   });
 
   const connectAccount = () => {
-    const { app, token } = connectParams;
-    if (!app || !token) return;
+    const { app } = connectParams;
+    if (!app) return;
 
-    pd.connectAccount({
+    client.connectAccount({
       app,
-      token,
-      onSuccess: async ({ id: accountId }: ConnectResult) => {
-        // Show connected state immediately
+      onSuccess: ({ id: accountId }: ConnectResult) => {
+        // Handle successful connection
+        console.log(`Account successfully connected: ${accountId}`);
         setIsConnected(true);
         setIsLoadingAccount(true);
 
         // Fetch account details
         try {
-          const account = await getConnectedAccountById(accountId);
-          setConnectedAccount(account);
+          if (accountId) {
+            getConnectedAccountById(accountId).then((accountDetails) => {
+              if (accountDetails) {
+                setConnectedAccount(accountDetails);
+              }
+            }).catch((error) => {
+              console.error('Error fetching account details:', error);
+            }).finally(() => {
+              setIsLoadingAccount(false);
+            });
+          } else {
+            setIsLoadingAccount(false);
+          }
         } catch (error) {
-          // Still show connected even if details fail
-        } finally {
+          console.error('Error fetching account details:', error);
           setIsLoadingAccount(false);
         }
 
@@ -254,7 +275,10 @@ export const ToolCallResult = ({
         }, 1000);
       },
       onError: (error) => {
-        console.error('Connect account error:', error);
+        // Handle connection error
+        console.error(`Connection error: ${error.message}`);
+        setIsConnected(false);
+        setIsLoadingAccount(false);
       },
     })
   }

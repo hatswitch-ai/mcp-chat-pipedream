@@ -8,16 +8,16 @@ The connections feature provides a seamless way for users to authenticate with 2
 
 ## Current Status
 
-**Development Mode**: ✅ **Working with real JWT tokens**
-- Connect Link URLs are generated successfully with real Pipedream JWT tokens
+**Development Mode**: ✅ **Working with Connect API tokens**
+- Connect tokens are generated using Pipedream's official Connect API
 - OAuth screen displays with company branding
-- Real authentication tokens enable full OAuth flow
-- `rawAccessToken` is working correctly
+- SDK handles token refresh and iframe management automatically
+- Follows Pipedream's recommended implementation pattern
 
-**Production Mode**: ⚠️ **Requires JWT token implementation**
-- Need to implement proper JWT token generation
-- Use Pipedream Connect API or manual JWT signing
-- See "Production Implementation" section below
+**Production Mode**: ✅ **Ready for production**
+- Uses official Pipedream Connect API for token generation
+- Short-lived tokens for better security
+- Automatic token refresh handled by SDK
 
 ## Architecture
 
@@ -52,17 +52,15 @@ App Selector opens with list of apps
     ↓
 User selects an app
     ↓
-SidebarConnections calls /api/create-connect-link-url
+Frontend calls client.connectAccount() (no manual URL construction)
     ↓
-API calls pdClient().rawAccessToken (property, no arguments)
+SDK calls tokenCallback to fetch token from /api/connect-token
     ↓
-API uses rawAccessToken as Connect Token in URL
+Backend calls Pipedream Connect API to create short-lived token
     ↓
-API returns Connect Link URL with real JWT token
+Backend returns Connect Token to frontend
     ↓
-Frontend calls pd.connectAccount() with token
-    ↓
-Pipedream OAuth flow opens with company branding
+SDK automatically opens Pipedream OAuth flow with company branding
     ↓
 User completes authentication
     ↓
@@ -132,70 +130,55 @@ NEXT_PUBLIC_DATADOG_DISABLED=true  # Disable Datadog RUM
 
 ## Technical Implementation
 
-### JWT Token Generation
+### Connect Token Generation
 
-**Current Implementation (Development):**
+**Current Implementation:**
+
+Backend endpoint creates short-lived Connect Tokens using Pipedream's Connect API:
+
 ```typescript
-// Get PipedreamClient instance (singleton pattern)
-const client = pdClient();
-
-// Try to get real JWT token from Pipedream SDK
-let connectToken;
-try {
-  const accessToken = await client.rawAccessToken;
-  connectToken = accessToken;
-  console.log('Using real JWT token from Pipedream SDK');
-} catch (error) {
-  // Fallback to placeholder token for development
-  console.log('rawAccessToken failed, using placeholder token for development');
-  connectToken = `dev_placeholder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-// Create Connect Link URL
-const connectLinkUrl = new URL('https://pipedream.com/_static/connect.html');
-connectLinkUrl.searchParams.set('token', connectToken);
-connectLinkUrl.searchParams.set('connectLink', 'true');
-connectLinkUrl.searchParams.set('app', appId);
-connectLinkUrl.searchParams.set('success_redirect_uri', `${origin}/accounts?connected=true`);
-connectLinkUrl.searchParams.set('error_redirect_uri', `${origin}/accounts?error=true`);
+// /api/connect-token endpoint
+const response = await fetch(
+  `https://api.pipedream.com/v1/connect/${projectId}/tokens`,
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${await client.rawAccessToken}`,
+      'Content-Type': 'application/json',
+      'x-pd-environment': environment
+    },
+    body: JSON.stringify({
+      external_user_id: userId,
+      allowed_origins: [origin],
+      success_redirect_uri: `${origin}/accounts?connected=true`,
+      error_redirect_uri: `${origin}/accounts?error=true`
+    })
+  }
+);
 ```
 
-**Production Implementation (TODO):**
-For production, you need to implement proper JWT token generation using Pipedream's Connect API:
+Frontend uses `tokenCallback` to fetch tokens on demand:
 
 ```typescript
-// Method 1: Use Pipedream Connect API to create Connect Tokens
-const response = await fetch('https://api.pipedream.com/v1/connect/tokens', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${await client.rawAccessToken}`,
-    'Content-Type': 'application/json',
+const client = new PipedreamClient({
+  projectEnvironment: "development",
+  externalUserId: userId,
+  tokenCallback: async () => {
+    const res = await fetch("/api/connect-token", {
+      method: "POST",
+      body: JSON.stringify({ external_user_id: userId }),
+    });
+    const { token } = await res.json();
+    return token;
   },
-  body: JSON.stringify({
-    externalUserId: userId,
-    appId: appId,
-    expiresIn: 3600 // 1 hour
-  })
 });
 
-const { token } = await response.json();
-const connectToken = token;
-```
-
-**Alternative Method 2: Generate JWT manually**
-```typescript
-// Create JWT payload for Pipedream Connect
-const payload = {
-  iss: process.env.PIPEDREAM_CLIENT_ID,
-  sub: userId,
-  aud: 'connect',
-  exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
-  iat: Math.floor(Date.now() / 1000),
-  app_id: appId
-};
-
-// Sign with your client secret (requires jwt library)
-const connectToken = jwt.sign(payload, process.env.PIPEDREAM_CLIENT_SECRET, { algorithm: 'HS256' });
+// SDK handles token refresh and iframe management
+client.connectAccount({
+  app: appId,
+  onSuccess: (account) => { /* ... */ },
+  onError: (err) => { /* ... */ }
+});
 ```
 
 ### Token Caching Strategy

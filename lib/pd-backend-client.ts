@@ -18,6 +18,8 @@ export function pdClient(): PipedreamClient {
   _pd = new PipedreamClient({
     clientId: process.env.PIPEDREAM_CLIENT_ID,
     clientSecret: process.env.PIPEDREAM_CLIENT_SECRET,
+    projectId: process.env.PIPEDREAM_PROJECT_ID,
+    projectEnvironment: process.env.PIPEDREAM_PROJECT_ENVIRONMENT || 'development',
   });
   
   return _pd;

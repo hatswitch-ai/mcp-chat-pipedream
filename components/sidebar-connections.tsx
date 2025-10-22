@@ -26,7 +26,7 @@ import {
   Trash2,
   RefreshCw
 } from 'lucide-react';
-import { type App, createFrontendClient, type ConnectResult, type Account } from '@pipedream/sdk/browser';
+import { type App, PipedreamClient, type ConnectResult, type Account } from '@pipedream/sdk/browser';
 import { useEffectiveSession } from '@/hooks/use-effective-session';
 import { getConnectedAccountById, getConnectedAccounts, deleteConnectedAccount } from '@/app/(chat)/accounts/actions';
 import Image from 'next/image';
@@ -38,14 +38,51 @@ export function SidebarConnections() {
   const [isLoadingApps, setIsLoadingApps] = useState(true); // Start loading immediately
   const [errorFetchingApps, setErrorFetchingApps] = useState<string | null>(null);
   const [allowAllApps, setAllowAllApps] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [connectionTimeout, setConnectionTimeout] = useState<NodeJS.Timeout | null>(null);
   const [connectedAccounts, setConnectedAccounts] = useState<Account[]>([]);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
   
   const { data: session } = useEffectiveSession();
+
+  // Create PipedreamClient with tokenCallback
+  const client = useMemo(() => {
+    if (!session?.user?.id) return null;
+    
+    const userId = session.user.id; // Store in variable to avoid repeated access
+    
+    return new PipedreamClient({
+      projectEnvironment: (process.env.NEXT_PUBLIC_PIPEDREAM_PROJECT_ENVIRONMENT as any) || 'development',
+      externalUserId: userId,
+      tokenCallback: async () => {
+        // First get OAuth token
+        const oauthRes = await fetch("/api/oauth-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "*" }),
+        });
+
+        if (!oauthRes.ok) throw new Error("Failed to fetch OAuth token");
+        const { access_token } = await oauthRes.json();
+        if (!access_token) throw new Error("Failed to fetch OAuth token");
+
+        // Then get Connect token using OAuth token
+        const connectRes = await fetch("/api/connect-token", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${access_token}`
+          },
+          body: JSON.stringify({ external_user_id: userId }),
+        });
+
+        if (!connectRes.ok) throw new Error("Failed to fetch Connect token");
+        const { token } = await connectRes.json();
+        if (!token) throw new Error("Failed to fetch Connect token");
+        return token;
+      },
+    });
+  }, [session?.user?.id]);
 
   // Memoize the apps array to prevent unnecessary re-renders
   const memoizedApps = useMemo(() => appsFromApi, [appsFromApi]);
@@ -65,37 +102,6 @@ export function SidebarConnections() {
     }
   };
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (connectionTimeout) {
-        clearTimeout(connectionTimeout);
-      }
-    };
-  }, []); // Empty dependency array - only run on unmount
-
-  // Reset connecting state if it gets stuck
-  useEffect(() => {
-    if (isConnecting) {
-      const timeout = setTimeout(() => {
-        console.warn('Connection timeout - resetting connecting state');
-        setIsConnecting(false);
-        setConnectionError('Connection timed out. Please try again.');
-      }, 120000); // 2 minute timeout (120 seconds)
-      
-      setConnectionTimeout(timeout);
-      
-      // Cleanup function
-      return () => {
-        clearTimeout(timeout);
-      };
-    } else {
-      if (connectionTimeout) {
-        clearTimeout(connectionTimeout);
-        setConnectionTimeout(null);
-      }
-    }
-  }, [isConnecting]); // Removed connectionTimeout from dependencies
 
   useEffect(() => {
     const fetchInitialApps = async () => {
@@ -132,101 +138,41 @@ export function SidebarConnections() {
 
   const handleAppSelect = async (app: App) => {
     console.log('Selected app:', app);
-    console.log('Using logged-in user ID:', session?.user?.id);
-    
-    // Close the selector first
     setIsAppSelectorOpen(false);
     
-    // Check if user is authenticated
-    if (!session?.user?.id) {
+    if (!client) {
       setConnectionError('Please sign in to connect accounts');
       return;
     }
     
-    // Check if app has an ID
     if (!app.id) {
       setConnectionError('Invalid app: missing app ID');
       return;
     }
     
-    setIsConnecting(true);
-    setConnectionError(null);
-    
     try {
-      // Create Connect Link URL directly using Pipedream Connect API
-      console.log('Creating Connect Link for:', { appId: app.id, userId: session.user.id, appName: app.name });
-      
-      const response = await fetch('/api/create-connect-link-url', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          appId: app.id,
-          userId: session.user.id,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to generate Connect Link: ${response.status}`);
-      }
-
-      const { connectLinkUrl, token } = await response.json();
-
-      if (!connectLinkUrl || !token) {
-        throw new Error('Invalid Connect Link response');
-      }
-
-      // Create Pipedream frontend client
-      const pd = createFrontendClient({
-        externalUserId: session.user.id,
-      });
-      
-      // Initiate OAuth connection using the generated Connect Link
-      pd.connectAccount({
+      // SDK handles everything - no manual URL construction
+      client.connectAccount({
         app: app.id,
-        token: token,
-        onSuccess: async ({ id: accountId }: ConnectResult) => {
-          console.log('Successfully connected account:', accountId);
-          setIsConnecting(false);
-          
-          // Refresh the connected accounts list
+        onSuccess: async (account) => {
+          console.log('Successfully connected account:', account.id);
           await loadConnectedAccounts();
-          
-          // Optional: Fetch and display account details
-          if (accountId) {
-            try {
-              const account = await getConnectedAccountById(accountId);
-              console.log('Connected account details:', account);
-            } catch (error) {
-              console.error('Error fetching account details:', error);
-            }
-          }
-          
-          // Show success message (you could replace this with a toast notification)
           alert(`Successfully connected to ${app.name}!`);
         },
         onError: (error) => {
           console.error('Connection error:', error);
           setConnectionError(`Failed to connect to ${app.name}: ${error.message || 'Unknown error'}`);
-          setIsConnecting(false);
         },
       });
     } catch (error) {
       console.error('Error initiating connection:', error);
-      setConnectionError(`Failed to initiate connection to ${app.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setIsConnecting(false);
+      setConnectionError(`Failed to initiate connection: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  // Manual reset function for stuck connections
+  // Manual reset function for connection errors
   const resetConnectionState = () => {
-    setIsConnecting(false);
     setConnectionError(null);
-    if (connectionTimeout) {
-      clearTimeout(connectionTimeout);
-      setConnectionTimeout(null);
-    }
   };
 
   // Function to handle account deletion
@@ -268,14 +214,9 @@ export function SidebarConnections() {
                       variant="ghost"
                       className="w-full justify-start gap-2 h-8 px-2"
                       onClick={() => setIsAppSelectorOpen(true)}
-                      disabled={isConnecting}
                     >
-                      {isConnecting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Plus className="h-4 w-4" />
-                      )}
-                      <span>{isConnecting ? 'Connecting...' : 'Connect new app'}</span>
+                      <Plus className="h-4 w-4" />
+                      <span>Connect new app</span>
                     </Button>
                   </div>
                   <div className="px-2 py-1">
@@ -385,24 +326,6 @@ export function SidebarConnections() {
                           onClick={resetConnectionState}
                         >
                           Reset
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  {isConnecting && (
-                    <div className="px-2 py-1">
-                      <div className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Connecting... (2min timeout)</span>
-                      </div>
-                      <div className="px-2 py-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-xs"
-                          onClick={resetConnectionState}
-                        >
-                          Cancel
                         </Button>
                       </div>
                     </div>
