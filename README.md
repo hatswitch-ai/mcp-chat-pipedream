@@ -21,6 +21,7 @@
 ## Features
 
 - **MCP integrations**: Connect to thousands of APIs through Pipedream's MCP server with built-in auth
+- **Sidebar Connections**: Browse and connect to 2,800+ APIs directly from the sidebar with branded OAuth flows
 - **Automatic tool discovery**: Execute tool calls across different APIs via chat
 - **Uses the [AI SDK](https://sdk.vercel.ai/docs)**: Unified API for generating text, structured objects, and tool calls with LLMs
 - **Flexible LLM and framework support**: Works with any LLM provider or framework
@@ -69,6 +70,30 @@ pnpm dev
 ```
 
 Your local app should now be running on [http://localhost:3000](http://localhost:3000/) 🎉
+
+## Sidebar Connections
+
+This app includes a powerful sidebar connections feature that allows users to browse and connect to 2,800+ APIs through Pipedream's OAuth system. For detailed information about the connections feature, see [PIPEDREAM_CONNECTIONS_README.md](./PIPEDREAM_CONNECTIONS_README.md).
+
+### Quick Setup for Connections
+
+1. Set the required environment variables:
+```bash
+PIPEDREAM_CLIENT_ID=your_client_id
+PIPEDREAM_CLIENT_SECRET=your_client_secret
+PIPEDREAM_PROJECT_ID=your_project_id
+PIPEDREAM_PROJECT_ENVIRONMENT=production
+```
+
+2. Configure app filtering (optional):
+```bash
+PIPEDREAM_ALLOW_ALL_APPS=true  # Show all apps with search
+# OR
+PIPEDREAM_ALLOW_ALL_APPS=false
+PIPEDREAM_APP_FILTER=Google    # Show only Google apps
+```
+
+3. The connections section will appear in the sidebar automatically!
 
 ### Enabling chat persistence
 

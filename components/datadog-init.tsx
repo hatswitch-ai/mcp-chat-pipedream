@@ -6,9 +6,10 @@ export default function DatadogInit() {
   if (typeof window !== 'undefined') {
     const applicationId = process.env.NEXT_PUBLIC_DATADOG_APPLICATION_ID;
     const clientToken = process.env.NEXT_PUBLIC_DATADOG_CLIENT_TOKEN;
+    const isDatadogDisabled = process.env.NEXT_PUBLIC_DATADOG_DISABLED === 'true';
     
-    // Only initialize if both required env vars are present
-    if (applicationId && clientToken) {
+    // Only initialize if both required env vars are present and Datadog is not disabled
+    if (applicationId && clientToken && !isDatadogDisabled) {
       datadogRum.init({
         applicationId,
         clientToken,
